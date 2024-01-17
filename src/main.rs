@@ -1,12 +1,38 @@
 use itertools::Itertools;
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::{fs, io};
 use zip::ZipArchive;
 
-fn unzip(path: &str) -> Vec<String> {
-    let file = File::open(format!("decks/{}.zip", path)).unwrap();
+fn unzip(path: &str) -> (Vec<String>, String) {
+    let path = path.strip_suffix(".zip").unwrap_or(path);
+    let (file, name) = match File::open(format!("decks/{}.zip", path)) {
+        Ok(file) => (file, path.to_owned()),
+        Err(_) => {
+            let paths = fs::read_dir("decks").unwrap();
+
+            let mut name = None;
+            let mut file = None;
+            for path in paths {
+                let path = path.unwrap().path();
+                if path.extension() == Some(OsStr::new("zip")) {
+                    let name_suffix = path.file_name().unwrap().to_str().unwrap();
+                    name = Some(
+                        name_suffix
+                            .strip_suffix(".zip")
+                            .unwrap_or(name_suffix)
+                            .to_string(),
+                    );
+                    file = Some(File::open(path).unwrap());
+                    break;
+                }
+            }
+
+            (file.unwrap(), name.unwrap())
+        }
+    };
     let mut archive = ZipArchive::new(file).unwrap();
 
     let mut paths = Vec::new();
@@ -21,7 +47,7 @@ fn unzip(path: &str) -> Vec<String> {
         if let Some(file_name) = file_name {
             let out_path: PathBuf = [
                 "output",
-                &format!("{}-images", path),
+                &format!("{}-images", name),
                 &file_name.display().to_string(),
             ]
             .into_iter()
@@ -49,7 +75,7 @@ fn unzip(path: &str) -> Vec<String> {
         f64::round(total_size as f64 / 1024.0 / 1024.0)
     );
 
-    paths
+    (paths, name)
 }
 
 fn generate_html(file_names: &[String], name: &str) {
@@ -80,7 +106,8 @@ fn generate_html(file_names: &[String], name: &str) {
 }
 
 fn main() {
-    let name = "Jhoira-Aging-Innovator";
-    let file_names = unzip(name);
-    generate_html(&file_names, name);
+    let name = "deck-name";
+
+    let (file_names, name) = unzip(name);
+    generate_html(&file_names, &name);
 }
